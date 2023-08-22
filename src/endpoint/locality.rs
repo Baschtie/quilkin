@@ -16,6 +16,7 @@
 
 use std::collections::BTreeSet;
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::Endpoint;
@@ -277,34 +278,85 @@ impl LocalitySet {
     }
 
     pub fn merge(&mut self, cluster: &Self) {
-        for (key, value) in &cluster.0 {
-            if tracing::enabled!(tracing::Level::INFO) {
-                let span = tracing::info_span!(
-                    "applied_locality",
-                    locality = &*key
-                        .as_ref()
-                        .map(|locality| locality.colon_separated_string())
-                        .unwrap_or_else(|| String::from("<none>"))
-                );
+        use std::collections::hash_map::Entry;
 
-                let _entered = span.enter();
-                if value.endpoints.is_empty() {
-                    tracing::info!("removing all endpoints");
-                } else if let Some(original_endpoints) = self.0.get(key) {
-                    for endpoint in &original_endpoints.endpoints {
-                        if !value.endpoints.contains(endpoint) {
-                            tracing::info!(%endpoint.address, ?endpoint.metadata.known.tokens, "removing endpoint");
+        for (key, value) in &cluster.0 {
+            let span = tracing::info_span!(
+                "applied_locality",
+                locality = &*key
+                    .as_ref()
+                    .map(|locality| locality.colon_separated_string())
+                    .unwrap_or_else(|| String::from("<none>"))
+            );
+
+            let _entered = span.enter();
+
+            match self.0.entry(key.clone()) {
+                // The eviction logic is as follows:
+                //
+                // If an endpoint already exists:
+                // - If `sessions` is zero then it is dropped.
+                // If that endpoint exists in the new set:
+                // - Its metadata is replaced with the new set.
+                // Else the endpoint remains.
+                //
+                // This will mean that updated metadata such as new tokens
+                // will be respected, but we will still retain older
+                // endpoints that are currently actively used in a session.
+                Entry::Occupied(entry) => {
+                    let (key, original_locality) = entry.remove_entry();
+                    let mut value = value.clone();
+                    let new_set_addresses = value
+                        .endpoints
+                        .iter()
+                        .map(|endpoint| endpoint.address.clone())
+                        .collect::<BTreeSet<_>>();
+
+                    if tracing::enabled!(tracing::Level::INFO) {
+                        for endpoint in value.endpoints.iter() {
+                            tracing::info!(
+                                %endpoint.address,
+                                endpoint.tokens=%endpoint.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
+                                "applying endpoint"
+                            );
                         }
                     }
-                }
 
-                for endpoint in &value.endpoints {
-                    tracing::info!(%endpoint.address, ?endpoint.metadata.known.tokens, "applying endpoint");
+                    let (retained, dropped): (Vec<_>, _) = original_locality
+                        .endpoints
+                        .into_iter()
+                        .partition(|endpoint| {
+                            !new_set_addresses.contains(&endpoint.address)
+                                && endpoint.sessions.load(std::sync::atomic::Ordering::SeqCst) != 0
+                        });
+
+                    if tracing::enabled!(tracing::Level::INFO) {
+                        for endpoint in dropped {
+                            tracing::info!(
+                                %endpoint.address,
+                                endpoint.tokens=%endpoint.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
+                                "dropping endpoint"
+                            );
+                        }
+                    }
+
+                    for endpoint in retained {
+                        tracing::info!(
+                            %endpoint.address,
+                            endpoint.tokens=%endpoint.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
+                            "retaining endpoint"
+                        );
+
+                        value.endpoints.insert(endpoint);
+                    }
+
+                    self.0.insert(key, value.clone());
+                }
+                Entry::Vacant(entry) => {
+                    tracing::info!("adding new locality");
+                    entry.insert(value.clone());
                 }
             }
-
-            let entry = self.0.entry(key.clone()).or_default();
-            *entry = value.clone();
         }
     }
 }

@@ -94,6 +94,9 @@ impl Session {
             .connect(args.dest.address.to_socket_addr().await?)
             .await?;
         let (shutdown_tx, shutdown_rx) = watch::channel::<()>(());
+        args.dest
+            .sessions
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let s = Session {
             config: args.config.clone(),
@@ -235,6 +238,9 @@ impl Drop for Session {
     fn drop(&mut self) {
         self.active_session_metric().dec();
         metrics::duration_secs().observe(self.created_at.elapsed().as_secs() as f64);
+        self.dest
+            .sessions
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
 
         if let Err(error) = self.shutdown_tx.send(()) {
             tracing::warn!(%error, "Error sending session shutdown signal");
