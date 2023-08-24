@@ -109,6 +109,17 @@ impl Session {
         };
 
         tracing::debug!(source = %s.source, dest = ?s.dest, "Session created");
+        if let Some(asn) = &s.asn_info {
+            tracing::info!(
+                number = asn.r#as,
+                organization = asn.as_name,
+                country_code = asn.as_cc,
+                prefix = asn.prefix,
+                prefix_entity = asn.prefix_entity,
+                prefix_name = asn.prefix_name,
+                "maxmind information"
+            );
+        }
 
         self::metrics::total_sessions().inc();
         s.active_session_metric().inc();

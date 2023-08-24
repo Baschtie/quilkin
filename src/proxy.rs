@@ -70,33 +70,31 @@ impl DownstreamReceiveWorkerConfig {
                     "Awaiting packet"
                 );
 
-                tokio::select! {
-                    result = socket.recv_from(&mut buf) => {
-                        match result {
-                            Ok((size, source)) => {
-                                let packet = DownstreamPacket {
-                                    received_at: chrono::Utc::now().timestamp_nanos(),
-                                    asn_info: crate::maxmind_db::MaxmindDb::lookup(source.ip()),
-                                    contents: buf[..size].to_vec(),
-                                    source,
-                                };
+                match socket.recv_from(&mut buf).await {
+                    Ok((size, source)) => {
+                        let packet = DownstreamPacket {
+                            received_at: chrono::Utc::now().timestamp_nanos(),
+                            asn_info: crate::maxmind_db::MaxmindDb::lookup(source.ip()),
+                            contents: buf[..size].to_vec(),
+                            source,
+                        };
 
-                                if let Some(last_received_at) = last_received_at {
-                                    crate::metrics::packet_jitter(
-                                        crate::metrics::READ,
-                                        packet.asn_info.as_ref(),
-                                    )
-                                        .set(packet.received_at - last_received_at);
-                                }
-                                last_received_at = Some(packet.received_at);
-
-                                Self::spawn_process_task(packet, source, worker_id, &socket, &config, &sessions)
-                            }
-                            Err(error) => {
-                                tracing::error!(%error, "error receiving packet");
-                                return;
-                            }
+                        if let Some(last_received_at) = last_received_at {
+                            crate::metrics::packet_jitter(
+                                crate::metrics::READ,
+                                packet.asn_info.as_ref(),
+                            )
+                            .set(packet.received_at - last_received_at);
                         }
+                        last_received_at = Some(packet.received_at);
+
+                        Self::spawn_process_task(
+                            packet, source, worker_id, &socket, &config, &sessions,
+                        )
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "error receiving packet");
+                        return;
                     }
                 }
             }

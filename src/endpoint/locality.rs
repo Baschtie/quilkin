@@ -306,11 +306,6 @@ impl LocalitySet {
                 Entry::Occupied(entry) => {
                     let (key, original_locality) = entry.remove_entry();
                     let mut value = value.clone();
-                    let new_set_addresses = value
-                        .endpoints
-                        .iter()
-                        .map(|endpoint| endpoint.address.clone())
-                        .collect::<BTreeSet<_>>();
 
                     if tracing::enabled!(tracing::Level::INFO) {
                         for endpoint in value.endpoints.iter() {
@@ -326,8 +321,7 @@ impl LocalitySet {
                         .endpoints
                         .into_iter()
                         .partition(|endpoint| {
-                            !new_set_addresses.contains(&endpoint.address)
-                                && endpoint.sessions.load(std::sync::atomic::Ordering::SeqCst) != 0
+                            endpoint.sessions.load(std::sync::atomic::Ordering::SeqCst) != 0
                         });
 
                     if tracing::enabled!(tracing::Level::INFO) {
