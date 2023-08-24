@@ -18,6 +18,7 @@ pub(crate) mod metrics;
 
 use std::sync::Arc;
 
+use itertools::Itertools;
 use tokio::{net::UdpSocket, select, sync::watch, time::Instant};
 
 use crate::{
@@ -97,6 +98,13 @@ impl Session {
         args.dest
             .sessions
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        tracing::info!(
+            %args.dest.address,
+            endpoint.tokens=%args.dest.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
+            sessions = %args.dest.sessions.load(std::sync::atomic::Ordering::SeqCst),
+            "incrementing session endpoint counter"
+        );
 
         let s = Session {
             config: args.config.clone(),
@@ -252,6 +260,13 @@ impl Drop for Session {
         self.dest
             .sessions
             .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+
+        tracing::info!(
+            %self.dest.address,
+            endpoint.tokens=%self.dest.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
+            sessions = %self.dest.sessions.load(std::sync::atomic::Ordering::SeqCst),
+            "incrementing session endpoint counter"
+        );
 
         if let Err(error) = self.shutdown_tx.send(()) {
             tracing::warn!(%error, "Error sending session shutdown signal");
