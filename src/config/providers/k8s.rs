@@ -108,7 +108,7 @@ pub fn update_endpoints_from_gameservers(
                             continue;
                         }
                     };
-                    tracing::trace!(endpoint=%serde_json::to_value(&endpoint).unwrap(), "Adding endpoint");
+                    tracing::info!(endpoint=%serde_json::to_value(&endpoint).unwrap(), "adding endpoint");
                     match &locality {
                         Some(locality) => config
                             .clusters
@@ -140,8 +140,11 @@ pub fn update_endpoints_from_gameservers(
                         })
                         .collect();
                     let endpoints = LocalityEndpoints::from((servers, locality.clone()));
-                    tracing::trace!(?endpoints, "Restarting with endpoints");
-                    config.clusters.write().insert_default(endpoints);
+                    tracing::info!(
+                        endpoints=%serde_json::to_value(&endpoints).unwrap(),
+                        "Restarting with endpoints"
+                    );
+                    config.clusters.write().default_cluster_mut().insert(endpoints);
                 }
 
                 Event::Deleted(server) => {
@@ -149,7 +152,15 @@ pub fn update_endpoints_from_gameservers(
                         config.clusters.write().remove_endpoint(&endpoint)
                     } else {
                         config.clusters.write().remove_endpoint_if(|endpoint| {
-                            endpoint.metadata.unknown.get("name") == server.metadata.name.clone().map(From::from).as_ref()
+                            if endpoint.metadata.unknown.get("name") == server.metadata.name.clone().map(From::from).as_ref() {
+                                tracing::info!(
+                                    endpoint=%serde_json::to_value(endpoint).unwrap(),
+                                    "deleting gameserver"
+                                );
+                                true
+                            } else {
+                                false
+                            }
                         })
                     };
 
@@ -158,6 +169,11 @@ pub fn update_endpoints_from_gameservers(
                             endpoint=%serde_json::to_value(server.endpoint()).unwrap(),
                             name=%serde_json::to_value(server.metadata.name).unwrap(),
                             "received unknown gameserver to delete from k8s"
+                        );
+                    } else if let Some(endpoint) = server.endpoint() {
+                        tracing::info!(
+                            endpoint=%serde_json::to_value(endpoint).unwrap(),
+                            "deleting gameserver"
                         );
                     }
                 }
