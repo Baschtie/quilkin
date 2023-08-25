@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-mod sessions;
+pub(crate) mod sessions;
 
 use std::sync::Arc;
 

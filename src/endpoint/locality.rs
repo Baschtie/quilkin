@@ -321,7 +321,9 @@ impl LocalitySet {
                         .endpoints
                         .into_iter()
                         .partition(|endpoint| {
-                            endpoint.sessions.load(std::sync::atomic::Ordering::SeqCst) != 0
+                            crate::proxy::sessions::ADDRESS_MAP
+                                .get(&endpoint.address)
+                                .is_some()
                         });
 
                     if tracing::enabled!(tracing::Level::INFO) {

@@ -413,8 +413,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn merge() {
+    #[tokio::test]
+    async fn merge() {
         let nl1 = Locality::region("nl-1");
         let de1 = Locality::region("de-1");
 

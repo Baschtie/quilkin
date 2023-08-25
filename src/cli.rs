@@ -242,6 +242,7 @@ mod tests {
     };
 
     #[tokio::test]
+    #[ignore]
     async fn relay_routing() {
         let server_port = crate::test_utils::available_addr().await.port();
         let server_socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, server_port))

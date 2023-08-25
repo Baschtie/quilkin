@@ -19,6 +19,7 @@ pub(crate) mod metrics;
 use std::sync::Arc;
 
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use tokio::{net::UdpSocket, select, sync::watch, time::Instant};
 
 use crate::{
@@ -29,6 +30,9 @@ use crate::{
 };
 
 pub type SessionMap = crate::ttl_map::TtlMap<SessionKey, Session>;
+
+pub(crate) static ADDRESS_MAP: Lazy<crate::ttl_map::TtlMap<EndpointAddress, ()>> =
+    Lazy::new(<_>::default);
 
 /// Session encapsulates a UDP stream session
 pub struct Session {
@@ -95,14 +99,12 @@ impl Session {
             .connect(args.dest.address.to_socket_addr().await?)
             .await?;
         let (shutdown_tx, shutdown_rx) = watch::channel::<()>(());
-        args.dest
-            .sessions
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        ADDRESS_MAP.insert(args.dest.address.clone(), ());
 
         tracing::info!(
             %args.dest.address,
             endpoint.tokens=%args.dest.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
-            sessions = %args.dest.sessions.load(std::sync::atomic::Ordering::SeqCst),
             "incrementing session endpoint counter"
         );
 
@@ -257,14 +259,10 @@ impl Drop for Session {
     fn drop(&mut self) {
         self.active_session_metric().dec();
         metrics::duration_secs().observe(self.created_at.elapsed().as_secs() as f64);
-        self.dest
-            .sessions
-            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
 
         tracing::info!(
             %self.dest.address,
             endpoint.tokens=%self.dest.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
-            sessions = %self.dest.sessions.load(std::sync::atomic::Ordering::SeqCst),
             "incrementing session endpoint counter"
         );
 
