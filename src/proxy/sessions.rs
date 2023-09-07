@@ -90,11 +90,11 @@ impl Session {
     ) -> Result<Self, super::PipelineError> {
         let (shutdown_tx, shutdown_rx) = watch::channel::<()>(());
 
-        ADDRESS_MAP.insert(args.dest.address.clone(), ());
+        ADDRESS_MAP.insert(dest.address.clone(), ());
 
         tracing::info!(
-            %args.dest.address,
-            endpoint.tokens=%args.dest.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
+            %dest.address,
+            endpoint.tokens=%dest.metadata.known.tokens.iter().map(crate::utils::base64_encode).join(", "),
             "incrementing session endpoint counter"
         );
 
